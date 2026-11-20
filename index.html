@@ -128,7 +128,9 @@ button.b.d{color:#c0392b}
     <textarea id="txt" placeholder="Text hier einfügen (z. B. aus ChatGPT) …"></textarea>
     <div class="row" style="margin-top:10px">
       <button class="b p" id="go">In Handschrift umwandeln</button>
-      <button class="b" id="png">Als PNG speichern</button>
+      <button class="b p" id="pdf">PDF A4 (GoodNotes)</button>
+      <button class="b" id="pngt">PNG ohne Hintergrund (GoodNotes)</button>
+      <button class="b" id="png">PNG mit Papier</button>
       <button class="b" id="shuf">🎲 Neu mischen</button>
     </div>
     <div class="hint" id="miss" style="margin-top:8px"></div>
@@ -468,20 +470,21 @@ function drawText(cv,fnt,o,missEl){
     });
     lines.push(line);
   });
-  var dpr=Math.min(window.devicePixelRatio||1,2), H=Math.max(lines.length,8)*lineH+margin*2;
+  var dpr=o.dpr||Math.min(window.devicePixelRatio||1,2), PH=o.pages?1273:0, lpp=PH?Math.max(1,Math.floor((PH-2*margin)/lineH)):0, H=PH?Math.max(1,Math.ceil(lines.length/lpp))*PH:Math.max(lines.length,8)*lineH+margin*2;
   cv.width=W*dpr; cv.height=H*dpr; cv.style.width='100%'; cv.style.aspectRatio=W+'/'+H;
   var ctx=cv.getContext('2d'); ctx.scale(dpr,dpr);
-  ctx.fillStyle='#fffefb'; ctx.fillRect(0,0,W,H);
+  if(!o.transparent){ ctx.fillStyle='#fffefb'; ctx.fillRect(0,0,W,H); }
   var top=margin+size*1.15;
-  if(paper!=='plain'){
+  if(paper!=='plain' && !o.transparent){
     ctx.strokeStyle='#c9d6ec'; ctx.lineWidth=1;
-    for(var y=top; y<H; y+=lineH){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+    if(PH){ for(var pg=0;pg<H/PH;pg++){ for(var r=0;r<lpp;r++){ var yy=pg*PH+top+r*lineH; ctx.beginPath(); ctx.moveTo(0,yy); ctx.lineTo(W,yy); ctx.stroke(); } } }
+    else { for(var y=top; y<H; y+=lineH){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); } }
     if(paper==='grid'){ for(var gx=margin; gx<W; gx+=lineH/2){ ctx.beginPath(); ctx.moveTo(gx,0); ctx.lineTo(gx,H); ctx.stroke(); } }
     ctx.strokeStyle='#e8a3a3'; ctx.beginPath(); ctx.moveTo(margin-14,0); ctx.lineTo(margin-14,H); ctx.stroke();
   }
   ctx.lineCap='round'; ctx.lineJoin='round';
   lines.forEach(function(line,li){
-    var by=top+li*lineH;
+    var by=PH?Math.floor(li/lpp)*PH+top+(li%lpp)*lineH:top+li*lineH;
     line.forEach(function(w){
       ctx.save(); ctx.translate(margin+w.x, by+rnd(wob*0.9)); ctx.rotate(rnd(wob*0.012));
       w.items.forEach(function(it){
@@ -508,6 +511,54 @@ function drawText(cv,fnt,o,missEl){
   $('shuf').onclick=function(){ seedBase=Math.floor(Math.random()*1e9); renderText(); };
 })();
 $('go').onclick=renderText;
+$('pdf').onclick=function(){
+  var n=$('use').value, all=allFonts(), fnt=(n&&n!=='__draft__'&&all[n])?all[n]:font, o={};
+  IDS.forEach(function(id){ o[id]=$(id).value; }); o.txt=$('txt').value; o.pages=1; o.dpr=2;
+  var cv=document.createElement('canvas'); drawText(cv,fnt,o,document.createElement('div'));
+  var ph=1273*2, pw=cv.width, np=Math.round(cv.height/ph), jp=[], i;
+  for(i=0;i<np;i++){
+    var pc=document.createElement('canvas'); pc.width=pw; pc.height=ph; var c2=pc.getContext('2d');
+    c2.fillStyle='#fff'; c2.fillRect(0,0,pw,ph); c2.drawImage(cv,0,i*ph,pw,ph,0,0,pw,ph);
+    var b64=pc.toDataURL('image/jpeg',.92).split(',')[1], bin=atob(b64), u=new Uint8Array(bin.length);
+    for(var k=0;k<bin.length;k++) u[k]=bin.charCodeAt(k);
+    jp.push(u);
+  }
+  var parts=[], offs=[], len=0, enc=new TextEncoder();
+  function add(x){ var b=(typeof x==='string')?enc.encode(x):x; parts.push(b); len+=b.length; }
+  function ob(num,body){ offs[num]=len; add(num+' 0 obj\n'+body+'\nendobj\n'); }
+  add('%PDF-1.4\n');
+  ob(1,'<< /Type /Catalog /Pages 2 0 R >>');
+  var kids=[]; for(i=0;i<np;i++) kids.push((3+3*i)+' 0 R');
+  ob(2,'<< /Type /Pages /Kids ['+kids.join(' ')+'] /Count '+np+' >>');
+  for(i=0;i<np;i++){
+    var pn=3+3*i, cn=4+3*i, im=5+3*i, ct='q 595.28 0 0 841.89 0 0 cm /Im0 Do Q';
+    ob(pn,'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Resources << /XObject << /Im0 '+im+' 0 R >> >> /Contents '+cn+' 0 R >>');
+    ob(cn,'<< /Length '+ct.length+' >>\nstream\n'+ct+'\nendstream');
+    offs[im]=len;
+    add(im+' 0 obj\n<< /Type /XObject /Subtype /Image /Width '+pw+' /Height '+ph+' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '+jp[i].length+' >>\nstream\n');
+    add(jp[i]); add('\nendstream\nendobj\n');
+  }
+  var xr=len, tot=3+3*np, x='xref\n0 '+tot+'\n0000000000 65535 f \n';
+  for(i=1;i<tot;i++) x+=('0000000000'+offs[i]).slice(-10)+' 00000 n \n';
+  add(x+'trailer\n<< /Size '+tot+' /Root 1 0 R >>\nstartxref\n'+xr+'\n%%EOF');
+  var bl=new Blob(parts,{type:'application/pdf'}), a=document.createElement('a');
+  a.href=URL.createObjectURL(bl); a.download='handschrift.pdf'; a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); },1500);
+};
+$('pngt').onclick=function(){
+  var n=$('use').value, all=allFonts(), fnt=(n&&n!=='__draft__'&&all[n])?all[n]:font, o={};
+  IDS.forEach(function(id){ o[id]=$(id).value; }); o.txt=$('txt').value; o.transparent=true; o.dpr=3;
+  var cv=document.createElement('canvas'); drawText(cv,fnt,o,document.createElement('div'));
+  var w=cv.width, h=cv.height, d=cv.getContext('2d').getImageData(0,0,w,h).data, a=w, b=h, c=0, e=0, x, y;
+  for(y=0;y<h;y++){ for(x=0;x<w;x++){ if(d[(y*w+x)*4+3]>8){ if(x<a)a=x; if(x>c)c=x; if(y<b)b=y; if(y>e)e=y; } } }
+  if(c<a){ alert('Nichts zu exportieren: Der Text ist leer.'); return; }
+  var m=18, o2=document.createElement('canvas'); o2.width=c-a+2*m; o2.height=e-b+2*m;
+  o2.getContext('2d').drawImage(cv,a-m,b-m,o2.width,o2.height,0,0,o2.width,o2.height);
+  o2.toBlob(function(bl){
+    var l=document.createElement('a'); l.href=URL.createObjectURL(bl); l.download='handschrift.png'; l.click();
+    setTimeout(function(){ URL.revokeObjectURL(l.href); },1500);
+  },'image/png');
+};
 $('png').onclick=function(){
   var cv=$('out'); if(!cv.width) return;
   var a=document.createElement('a'); a.href=cv.toDataURL('image/png'); a.download='handschrift.png'; a.click();
