@@ -40,6 +40,7 @@ button.b.d{color:#c0392b}
 .ph{padding:8px 12px;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:8px;font:inherit;cursor:pointer}
 .ph.on{background:var(--acc);border-color:var(--acc);color:#fff}
 .hide{display:none}
+#pre{width:100%;border:1px solid var(--line);border-radius:8px;background:#fff;margin-top:8px}
 </style>
 </head>
 <body>
@@ -77,6 +78,7 @@ button.b.d{color:#c0392b}
     <div class="cap">
       <div>
         <div style="margin-bottom:6px">Zeichen: <b id="cur" style="font-size:1.4rem">a</b></div>
+        <div class="row" style="margin-bottom:6px"><button class="b p" id="tdraw">✏️ Zeichnen</button><button class="b" id="tsel">⬚ Auswählen &amp; verschieben</button><label><input type="checkbox" id="ghost" checked> vorheriger Buchstabe blass</label></div>
         <canvas id="pad" width="600" height="600"></canvas>
         <div class="row" style="margin-top:8px"><label for="zoom">Zoom</label><input type="range" id="zoom" min="0.5" max="2.5" step="0.05" value="1" style="flex:1"><b id="zv">100%</b></div>
         <div class="row" style="margin-top:6px"><label for="pen">Stiftdicke</label><input type="range" id="pen" min="6" max="30" value="14" style="flex:1"><label><input type="checkbox" id="cursive"> Schreibschrift-Modus</label></div>
@@ -95,6 +97,12 @@ button.b.d{color:#c0392b}
         <div id="grid"></div>
       </div>
     </div>
+  </div>
+<div class="card">
+    <div class="row"><label for="ptxt">Vorschau-Text (Buchstaben, Zahlen, Zeichen)</label></div>
+    <input type="text" id="ptxt" style="width:100%;margin-top:6px">
+    <div class="hint" id="pmiss" style="margin-top:6px"></div>
+    <canvas id="pre"></canvas>
   </div>
 </section>
 
@@ -135,7 +143,7 @@ button.b.d{color:#c0392b}
 var LOWER='abcdefghijklmnopqrstuvwxyzäöüß'.split(''), UPPER='ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ'.split(''), OTHER='0123456789.,!?:;-()"\'€%+=/@&'.split('');
 var GROUPS={lower:LOWER,upper:UPPER,other:OTHER}, ORDER=['lower','upper','other'];
 var CHARS=LOWER.concat(UPPER,OTHER);
-var phase='lower', zoom=1, AX=300, AY=340, SX=200, EX=400, LET=/[a-zäöüßA-ZÄÖÜ]/;
+var tool='draw', sel=null, DEF='Hallo Welt! Das sind 0123456789 Zahlen, ÄÖÜ äöüß, Zeichen: (+ - = / ? @ € % &)', phase='lower', zoom=1, AX=300, AY=340, SX=200, EX=400, LET=/[a-zäöüßA-ZÄÖÜ]/;
 var BASE = 420, XH = 260, ASC = 120, DESC = 540, CELL = 600; // Linien im 600er-Raster
 var KEY = 'handschrift_fonts_v1', DRAFT = 'handschrift_draft_v1';
 var $ = function(id){return document.getElementById(id);};
@@ -191,10 +199,38 @@ function strokePath(ctx, pts){
   }
   var l=pts[pts.length-1]; ctx.lineTo(l[0],l[1]); ctx.stroke();
 }
+function ghostStrokes(){
+  if(!$('ghost').checked) return null;
+  var g=GROUPS[phase], i=g.indexOf(curChar);
+  for(var k=i-1;k>=0;k--){ var v=font.glyphs[g[k]]; if(v) for(var j=0;j<v.length;j++) if(v[j]&&v[j].length) return v[j]; }
+  return null;
+}
+function bbox(st){
+  var a=1e9,b=1e9,c=-1e9,d=-1e9;
+  st.forEach(function(x){ x.forEach(function(q){ if(q[0]<a)a=q[0]; if(q[0]>c)c=q[0]; if(q[1]<b)b=q[1]; if(q[1]>d)d=q[1]; }); });
+  return a>c?null:[a,b,c,d];
+}
+function snapEnds(st){
+  if(!cursiveOn(curChar)||!st.length) return;
+  var f=st[0][0]; if(Math.hypot(f[0]-SX,f[1]-BASE)<=70) st[0][0]=[SX,BASE];
+  st.forEach(function(x){ var l=x[x.length-1]; if(x.length>1&&Math.hypot(l[0]-EX,l[1]-BASE)<=70) x[x.length-1]=[EX,BASE]; });
+}
 function redrawPad(){
   drawGuides();
-  pctx.strokeStyle='#1b2a6b'; pctx.fillStyle='#1b2a6b'; pctx.lineWidth=font.pen||14; pctx.lineCap='round'; pctx.lineJoin='round';
-  getStrokes(curChar,curSlot).forEach(function(s){ if(s.length) strokePath(pctx,s); });
+  pctx.lineWidth=font.pen||14; pctx.lineCap='round'; pctx.lineJoin='round';
+  var gs=ghostStrokes();
+  if(gs){ pctx.globalAlpha=.18; pctx.strokeStyle='#444'; pctx.fillStyle='#444'; gs.forEach(function(x){ if(x.length) strokePath(pctx,x); }); pctx.globalAlpha=1; }
+  pctx.strokeStyle='#1b2a6b'; pctx.fillStyle='#1b2a6b';
+  var cs=getStrokes(curChar,curSlot);
+  cs.forEach(function(x){ if(x.length) strokePath(pctx,x); });
+  if(tool==='select'){
+    var b=bbox(cs);
+    if(b){
+      pctx.save(); pctx.setLineDash([10,8]); pctx.strokeStyle='#2447c5'; pctx.lineWidth=2/zoom;
+      pctx.strokeRect(b[0]-10,b[1]-10,b[2]-b[0]+20,b[3]-b[1]+20); pctx.setLineDash([]);
+      pctx.fillStyle='#2447c5'; var h=16/zoom; pctx.fillRect(b[2]+10-h,b[3]+10-h,2*h,2*h); pctx.restore();
+    }
+  }
   pctx.setTransform(1,0,0,1,0,0);
 }
 function pos(e){
@@ -204,6 +240,14 @@ function pos(e){
 }
 pad.addEventListener('pointerdown', function(e){
   e.preventDefault(); var p=pos(e), cur=getStrokes(curChar,curSlot);
+  if(tool==='select'){
+    var b=bbox(cur); if(!b) return;
+    var hr=70/zoom, mode=null;
+    if(Math.hypot(p[0]-(b[2]+10),p[1]-(b[3]+10))<=hr) mode='scale';
+    else if(p[0]>=b[0]-10&&p[0]<=b[2]+10&&p[1]>=b[1]-10&&p[1]<=b[3]+10) mode='move';
+    if(!mode) return;
+    pad.setPointerCapture(e.pointerId); sel={mode:mode,last:p}; return;
+  }
   if(cursiveOn(curChar) && !cur.length){
     if(Math.hypot(p[0]-SX,p[1]-BASE)>70){ msg('Starte im grünen Punkt.'); return; }
     p=[SX,BASE];
@@ -212,9 +256,26 @@ pad.addEventListener('pointerdown', function(e){
   var s=cur.slice(); s.push(active); setStrokes(curChar,curSlot,s); redrawPad();
 });
 pad.addEventListener('pointermove', function(e){
+  if(sel){
+    e.preventDefault(); var q=pos(e), st=getStrokes(curChar,curSlot);
+    if(sel.mode==='move'){
+      var dx=q[0]-sel.last[0], dy=q[1]-sel.last[1];
+      st.forEach(function(x){ x.forEach(function(r){ r[0]+=dx; r[1]+=dy; }); }); sel.last=q;
+    } else {
+      var b=bbox(st), k=Math.hypot(q[0]-b[0],q[1]-b[1])/Math.max(1,Math.hypot(b[2]+10-b[0],b[3]+10-b[1]));
+      k=Math.min(Math.max(k,.7),1.4);
+      st.forEach(function(x){ x.forEach(function(r){ r[0]=b[0]+(r[0]-b[0])*k; r[1]=b[1]+(r[1]-b[1])*k; }); });
+    }
+    redrawPad(); return;
+  }
   if(!drawing) return; e.preventDefault(); active.push(pos(e)); redrawPad();
 });
 function endDraw(){
+  if(sel){
+    var st=getStrokes(curChar,curSlot); snapEnds(st); sel=null; setStrokes(curChar,curSlot,st); refreshUI();
+    if(cursiveOn(curChar)) msg(valid(st)?'✓ Start und Ziel erreicht':'Start/Ziel liegen nicht mehr in den Punkten.');
+    return;
+  }
   if(!drawing) return; drawing=false;
   if(cursiveOn(curChar) && active.length>1){
     var l=active[active.length-1];
@@ -269,10 +330,25 @@ function refreshUI(){
     b.lastChild.textContent = k+'/'+nvar();
   });
   $('nvar').value = String(nvar()); $('cursive').checked=!!font.cursive; $('pen').value=font.pen||14;
-  redrawPad();
+  redrawPad(); previewCap();
 }
 $('cursive').onchange=function(){ font.cursive=$('cursive').checked; safeSet(DRAFT,font); refreshUI(); msg(font.cursive?'Jeder Buchstabe: im grünen Punkt starten, im roten Punkt enden.':''); };
 $('pen').oninput=function(){ font.pen=+$('pen').value; safeSet(DRAFT,font); redrawPad(); };
+function setTool(t){
+  tool=t; $('tdraw').classList.toggle('p',t==='draw'); $('tsel').classList.toggle('p',t==='select');
+  pad.style.cursor=t==='select'?'move':'crosshair'; redrawPad();
+}
+$('tdraw').onclick=function(){ setTool('draw'); }; $('tsel').onclick=function(){ setTool('select'); };
+$('ghost').onchange=redrawPad;
+var ptm;
+function previewCap(){
+  clearTimeout(ptm);
+  ptm=setTimeout(function(){
+    var po={}; IDS.forEach(function(id){ po[id]=$(id).value; }); po.txt=$('ptxt').value;
+    drawText($('pre'),font,po,$('pmiss'));
+  },120);
+}
+$('ptxt').addEventListener('input',previewCap);
 $('nvar').onchange=function(){ font.n = +$('nvar').value; curSlot=0; safeSet(DRAFT,font); refreshUI(); };
 $('undo').onclick=function(){ var s=getStrokes(curChar,curSlot).slice(); s.pop(); setStrokes(curChar,curSlot,s); refreshUI(); };
 $('clear').onclick=function(){ setStrokes(curChar,curSlot,[]); refreshUI(); };
@@ -365,9 +441,12 @@ function rnd(a){ return (R()*2-1)*a; }
 var OPTS_KEY='handschrift_opts_v1', IDS=['size','thick','color','paper','wob','lsp','wsp','lh','slant'];
 
 function renderText(){
-  var n=$('use').value, all=allFonts(), fnt=(n&&n!=='__draft__'&&all[n])?all[n]:font;
-  var P=prepare(fnt), pen=fnt.pen||14, o={};
+  var n=$('use').value, all=allFonts(), fnt=(n&&n!=='__draft__'&&all[n])?all[n]:font, o={};
   IDS.forEach(function(id){ o[id]=$(id).value; }); o.txt=$('txt').value; safeSet(OPTS_KEY,o);
+  drawText($('out'),fnt,o,$('miss'));
+}
+function drawText(cv,fnt,o,missEl){
+  var P=prepare(fnt), pen=fnt.pen||14;
   var size=+o.size, mult=+o.thick, wob=+o.wob, sp=+o.lsp, sk=Math.tan(+o.slant*Math.PI/180), paper=o.paper;
   var s=size/260, lineH=size*(+o.lh), margin=50, W=900, maxW=W-2*margin, spaceW=size*0.38*(+o.wsp), miss={};
   st=seedBase; lastPick={};
@@ -389,7 +468,7 @@ function renderText(){
     });
     lines.push(line);
   });
-  var dpr=Math.min(window.devicePixelRatio||1,2), H=Math.max(lines.length,8)*lineH+margin*2, cv=$('out');
+  var dpr=Math.min(window.devicePixelRatio||1,2), H=Math.max(lines.length,8)*lineH+margin*2;
   cv.width=W*dpr; cv.height=H*dpr; cv.style.width='100%'; cv.style.aspectRatio=W+'/'+H;
   var ctx=cv.getContext('2d'); ctx.scale(dpr,dpr);
   ctx.fillStyle='#fffefb'; ctx.fillRect(0,0,W,H);
@@ -418,11 +497,12 @@ function renderText(){
     });
   });
   var m=Object.keys(miss).join(' ');
-  $('miss').textContent=m?'Noch nicht erfasst (grau dargestellt): '+m:'';
+  missEl.textContent=m?'Noch nicht erfasst (grau dargestellt): '+m:'';
 }
 (function(){
   var o=safeGet(OPTS_KEY)||{}; IDS.forEach(function(id){ if(o[id]!==undefined) $(id).value=o[id]; });
-  $('txt').value=o.txt||'Hallo Welt, so sieht meine Schrift aus.';
+  $('txt').value=o.txt||DEF;
+  $('ptxt').value=DEF;
   var tmr; function live(){ clearTimeout(tmr); tmr=setTimeout(renderText,150); }
   IDS.concat(['txt','use']).forEach(function(id){ $(id).addEventListener('input',live); $(id).addEventListener('change',live); });
   $('shuf').onclick=function(){ seedBase=Math.floor(Math.random()*1e9); renderText(); };
