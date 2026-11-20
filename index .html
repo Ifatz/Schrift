@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meine Handschrift</title>
+<style>
+:root{--bg:#f6f4ef;--card:#fff;--ink:#1d1d22;--mute:#6b6b75;--line:#dcd8cf;--acc:#2447c5;--ok:#1f8a4c}
+@media (prefers-color-scheme:dark){:root{--bg:#16161a;--card:#202026;--ink:#ececf1;--mute:#9a9aa6;--line:#35353d;--acc:#7b9bff;--ok:#4cc58a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
+header{padding:20px 16px 8px;max-width:960px;margin:auto}
+h1{margin:0;font-size:1.5rem}
+header p{margin:4px 0 0;color:var(--mute)}
+main{max-width:960px;margin:auto;padding:8px 16px 48px}
+nav{display:flex;gap:8px;margin:12px 0}
+nav button{flex:1;padding:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;font:inherit;cursor:pointer}
+nav button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+label{font-size:.85rem;color:var(--mute)}
+input[type=text],select,textarea{font:inherit;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
+textarea{width:100%;min-height:150px;resize:vertical}
+button.b{padding:9px 14px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;cursor:pointer}
+button.b.p{background:var(--acc);border-color:var(--acc);color:#fff}
+button.b.d{color:#c0392b}
+#grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(46px,1fr));gap:6px}
+.ch{border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);padding:6px 0 4px;text-align:center;cursor:pointer;font:inherit}
+.ch.sel{outline:2px solid var(--acc)}
+.ch small{display:block;font-size:.65rem;color:var(--mute)}
+.ch.full small{color:var(--ok)}
+#pad{width:300px;max-width:100%;aspect-ratio:1;border:1px solid var(--line);border-radius:10px;touch-action:none;background:#fffef8;cursor:crosshair;display:block}
+.slots{display:flex;gap:6px;margin:8px 0}
+.slot{width:44px;height:44px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit;cursor:pointer}
+.slot.sel{outline:2px solid var(--acc)}
+.slot.has{background:var(--ok);color:#fff;border-color:var(--ok)}
+.cap{display:flex;flex-wrap:wrap;gap:18px}
+#out{max-width:100%;border:1px solid var(--line);border-radius:8px;background:#fff;margin-top:12px}
+.hint{color:var(--mute);font-size:.85rem}
+.ph{padding:8px 12px;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:8px;font:inherit;cursor:pointer}
+.ph.on{background:var(--acc);border-color:var(--acc);color:#fff}
+.hide{display:none}
+</style>
+</head>
+<body>
+<header>
+  <h1>✍️ Meine Handschrift</h1>
+  <p>Eigene Buchstaben aufschreiben, speichern und beliebigen Text in deiner Schrift ausgeben.</p>
+</header>
+<main>
+<nav>
+  <button id="t1" class="on">1 · Schrift erfassen</button>
+  <button id="t2">2 · Text umwandeln</button>
+</nav>
+
+<section id="s1">
+  <div class="card">
+    <div class="row">
+      <label for="fname">Name der Schrift</label>
+      <input type="text" id="fname" placeholder="z. B. Max-Schrift" style="flex:1;min-width:160px">
+      <label for="nvar">Varianten pro Zeichen</label>
+      <select id="nvar"><option>3</option><option>4</option></select>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="b p" id="save">💾 Schrift speichern</button>
+      <select id="saved"></select>
+      <button class="b" id="load">Laden</button>
+      <button class="b d" id="del">Löschen</button>
+      <button class="b" id="exp">Exportieren</button>
+      <button class="b" id="imp">Importieren</button>
+      <input type="file" id="file" accept=".json" class="hide">
+    </div>
+    <p class="hint">Gespeichert wird in deinem Browser. Mit „Exportieren“ bekommst du eine Datei als Sicherung oder für ein anderes Gerät.</p>
+  </div>
+
+  <div class="card">
+    <div class="cap">
+      <div>
+        <div style="margin-bottom:6px">Zeichen: <b id="cur" style="font-size:1.4rem">a</b></div>
+        <canvas id="pad" width="600" height="600"></canvas>
+        <div class="row" style="margin-top:8px"><label for="zoom">Zoom</label><input type="range" id="zoom" min="0.5" max="2.5" step="0.05" value="1" style="flex:1"><b id="zv">100%</b></div>
+        <div class="slots" id="slots"></div>
+        <div class="row">
+          <button class="b" id="undo">↶ Strich zurück</button>
+          <button class="b" id="clear">Variante leeren</button>
+          <button class="b p" id="next">Weiter →</button>
+        </div>
+        <p class="hint">Der Zoom ändert nur die Ansicht. Gespeichert wird immer in derselben Größe, so bleiben alle Buchstaben gleich groß, egal wie klein oder groß du sie schreibst. Schreibe auf der Grundlinie (kräftige Linie). Klein­buchstaben bleiben zwischen den beiden mittleren Linien, Schleifen gehen nach oben/unten.</p>
+      </div>
+      <div style="flex:1;min-width:260px">
+        <div class="row" style="margin-bottom:8px"><button class="ph on" data-p="lower">1 · Kleinbuchstaben</button><button class="ph" data-p="upper">2 · Großbuchstaben</button><button class="ph" data-p="other">3 · Zahlen &amp; Zeichen</button></div>
+        <div class="hint" style="margin-bottom:6px">Zeichen auswählen (grün = alle Varianten vorhanden):</div>
+        <div id="grid"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="s2" class="hide">
+  <div class="card">
+    <div class="row" style="margin-bottom:8px">
+      <label for="use">Schrift</label><select id="use"></select>
+      <label for="size">Größe</label><input type="range" id="size" min="24" max="80" value="44">
+      <label for="thick">Strichstärke</label><input type="range" id="thick" min="1" max="8" step=".5" value="2.5">
+      <label for="color">Farbe</label><input type="color" id="color" value="#1b2a6b">
+    </div>
+    <div class="row" style="margin-bottom:8px">
+      <label for="paper">Papier</label>
+      <select id="paper"><option value="lines">Liniert</option><option value="grid">Kariert</option><option value="plain">Blanko</option></select>
+      <label for="wob">Unregelmäßigkeit</label><input type="range" id="wob" min="0" max="3" step=".1" value="1">
+    </div>
+    <textarea id="txt" placeholder="Text hier einfügen (z. B. aus ChatGPT) …"></textarea>
+    <div class="row" style="margin-top:10px">
+      <button class="b p" id="go">In Handschrift umwandeln</button>
+      <button class="b" id="png">Als PNG speichern</button>
+    </div>
+    <canvas id="out"></canvas>
+  </div>
+</section>
+</main>
+
+<script>
+(function(){
+'use strict';
+var LOWER='abcdefghijklmnopqrstuvwxyzäöüß'.split(''), UPPER='ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ'.split(''), OTHER='0123456789.,!?:;-()"\'€%+=/@&'.split('');
+var GROUPS={lower:LOWER,upper:UPPER,other:OTHER}, ORDER=['lower','upper','other'];
+var CHARS=LOWER.concat(UPPER,OTHER);
+var phase='lower', zoom=1, AX=300, AY=340;
+var BASE = 420, XH = 260, ASC = 120, DESC = 540, CELL = 600; // Linien im 600er-Raster
+var KEY = 'handschrift_fonts_v1', DRAFT = 'handschrift_draft_v1';
+var $ = function(id){return document.getElementById(id);};
+
+function safeGet(k){ try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch(e){ return null; } }
+function safeSet(k,v){ try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch(e){ alert('Speichern im Browser nicht möglich (Speicher voll oder gesperrt).'); return false; } }
+
+var font = safeGet(DRAFT) || { n: 3, glyphs: {} };
+var curChar = 'a', curSlot = 0, drawing = false, active = null;
+
+/* ---------- Tabs ---------- */
+function tab(n){
+  $('s1').classList.toggle('hide', n!==1); $('s2').classList.toggle('hide', n!==2);
+  $('t1').classList.toggle('on', n===1); $('t2').classList.toggle('on', n===2);
+  if(n===2) refreshSaved();
+}
+$('t1').onclick=function(){tab(1)}; $('t2').onclick=function(){tab(2)};
+
+/* ---------- Erfassen ---------- */
+var pad = $('pad'), pctx = pad.getContext('2d');
+function nvar(){ return font.n || 3; }
+function getStrokes(c,i){ return (font.glyphs[c] && font.glyphs[c][i]) || []; }
+function setStrokes(c,i,s){
+  if(!font.glyphs[c]) font.glyphs[c] = [];
+  font.glyphs[c][i] = s;
+  safeSet(DRAFT, font);
+}
+function countVars(c){ var g = font.glyphs[c]||[], k=0; for(var i=0;i<nvar();i++) if(g[i] && g[i].length) k++; return k; }
+
+function drawGuides(){
+  pctx.setTransform(1,0,0,1,0,0);
+  pctx.fillStyle = '#fffef8'; pctx.fillRect(0,0,CELL,CELL);
+  pctx.translate(AX,AY); pctx.scale(zoom,zoom); pctx.translate(-AX,-AY);
+  [[ASC,'#e3dfd3',1],[XH,'#cfd8f0',2],[BASE,'#7d8fd0',3],[DESC,'#e3dfd3',1]].forEach(function(l){
+    pctx.strokeStyle=l[1]; pctx.lineWidth=l[2]/zoom; pctx.beginPath(); pctx.moveTo(-2000,l[0]); pctx.lineTo(3000,l[0]); pctx.stroke();
+  });
+}
+function strokePath(ctx, pts){
+  if(pts.length===1){ ctx.beginPath(); ctx.arc(pts[0][0],pts[0][1],ctx.lineWidth/2,0,6.3); ctx.fill(); return; }
+  ctx.beginPath(); ctx.moveTo(pts[0][0],pts[0][1]);
+  for(var i=1;i<pts.length-1;i++){
+    var mx=(pts[i][0]+pts[i+1][0])/2, my=(pts[i][1]+pts[i+1][1])/2;
+    ctx.quadraticCurveTo(pts[i][0],pts[i][1],mx,my);
+  }
+  var l=pts[pts.length-1]; ctx.lineTo(l[0],l[1]); ctx.stroke();
+}
+function redrawPad(){
+  drawGuides();
+  pctx.strokeStyle='#1b2a6b'; pctx.fillStyle='#1b2a6b'; pctx.lineWidth=9; pctx.lineCap='round'; pctx.lineJoin='round';
+  getStrokes(curChar,curSlot).forEach(function(s){ if(s.length) strokePath(pctx,s); });
+  pctx.setTransform(1,0,0,1,0,0);
+}
+function pos(e){
+  var r = pad.getBoundingClientRect();
+  var px=(e.clientX-r.left)*CELL/r.width, py=(e.clientY-r.top)*CELL/r.height;
+  return [ +((px-AX)/zoom+AX).toFixed(1), +((py-AY)/zoom+AY).toFixed(1) ];
+}
+pad.addEventListener('pointerdown', function(e){
+  e.preventDefault(); pad.setPointerCapture(e.pointerId);
+  drawing = true; active = [pos(e)];
+  var s = getStrokes(curChar,curSlot).slice(); s.push(active); setStrokes(curChar,curSlot,s);
+  redrawPad();
+});
+pad.addEventListener('pointermove', function(e){
+  if(!drawing) return; e.preventDefault();
+  active.push(pos(e)); redrawPad();
+});
+function endDraw(){ if(!drawing) return; drawing=false; active=null; refreshUI(); }
+pad.addEventListener('pointerup', endDraw);
+pad.addEventListener('pointercancel', endDraw);
+
+function buildGrid(){
+  var g = $('grid'); g.innerHTML='';
+  GROUPS[phase].forEach(function(c){
+    var b = document.createElement('button'); b.className='ch'; b.dataset.c=c;
+    b.innerHTML = '<span style="font-size:1.1rem"></span><small></small>';
+    b.firstChild.textContent = c;
+    b.onclick=function(){ curChar=c; curSlot=firstEmpty(c); refreshUI(); };
+    g.appendChild(b);
+  });
+}
+function setPhase(p){
+  phase=p; buildGrid();
+  Array.prototype.forEach.call(document.querySelectorAll('.ph'), function(b){ b.classList.toggle('on', b.dataset.p===p); });
+}
+Array.prototype.forEach.call(document.querySelectorAll('.ph'), function(b){
+  b.onclick=function(){ setPhase(b.dataset.p); curChar=GROUPS[phase][0]; curSlot=firstEmpty(curChar); refreshUI(); };
+});
+$('zoom').oninput=function(){ zoom=+$('zoom').value; $('zv').textContent=Math.round(zoom*100)+'%'; redrawPad(); };
+function firstEmpty(c){ for(var i=0;i<nvar();i++){ if(!getStrokes(c,i).length) return i; } return 0; }
+function buildSlots(){
+  var s = $('slots'); s.innerHTML='';
+  for(var i=0;i<nvar();i++){
+    (function(i){
+      var b=document.createElement('button'); b.className='slot'; b.textContent=(i+1);
+      b.onclick=function(){ curSlot=i; refreshUI(); };
+      s.appendChild(b);
+    })(i);
+  }
+}
+function refreshUI(){
+  $('cur').textContent = curChar;
+  buildSlots();
+  Array.prototype.forEach.call($('slots').children, function(b,i){
+    b.classList.toggle('sel', i===curSlot);
+    b.classList.toggle('has', getStrokes(curChar,i).length>0);
+  });
+  Array.prototype.forEach.call($('grid').children, function(b){
+    var c=b.dataset.c, k=countVars(c);
+    b.classList.toggle('sel', c===curChar);
+    b.classList.toggle('full', k>=nvar());
+    b.lastChild.textContent = k+'/'+nvar();
+  });
+  $('nvar').value = String(nvar());
+  redrawPad();
+}
+$('nvar').onchange=function(){ font.n = +$('nvar').value; curSlot=0; safeSet(DRAFT,font); refreshUI(); };
+$('undo').onclick=function(){ var s=getStrokes(curChar,curSlot).slice(); s.pop(); setStrokes(curChar,curSlot,s); refreshUI(); };
+$('clear').onclick=function(){ setStrokes(curChar,curSlot,[]); refreshUI(); };
+$('next').onclick=function(){
+  if(curSlot < nvar()-1){ curSlot++; }
+  else {
+    var g=GROUPS[phase], k=g.indexOf(curChar);
+    if(k>-1 && k<g.length-1){ curChar=g[k+1]; }
+    else { setPhase(ORDER[(ORDER.indexOf(phase)+1)%ORDER.length]); curChar=GROUPS[phase][0]; }
+    curSlot=firstEmpty(curChar);
+  }
+  refreshUI();
+};
+
+/* ---------- Schriften speichern / laden ---------- */
+function allFonts(){ return safeGet(KEY) || {}; }
+function refreshSaved(){
+  var f = allFonts(), names = Object.keys(f);
+  ['saved','use'].forEach(function(id){
+    var sel=$(id), old=sel.value; sel.innerHTML='';
+    names.forEach(function(n){ var o=document.createElement('option'); o.value=n; o.textContent=n; sel.appendChild(o); });
+    if(names.indexOf(old)>-1) sel.value=old;
+  });
+  if(!names.length){
+    var o=document.createElement('option'); o.textContent='(noch keine gespeichert)'; o.value=''; $('use').appendChild(o);
+  }
+}
+$('save').onclick=function(){
+  var n=$('fname').value.trim();
+  if(!n){ alert('Bitte gib der Schrift zuerst einen Namen.'); return; }
+  var f=allFonts(); f[n]=JSON.parse(JSON.stringify(font));
+  if(safeSet(KEY,f)){ refreshSaved(); $('saved').value=n; alert('Schrift „'+n+'“ gespeichert.'); }
+};
+$('load').onclick=function(){
+  var n=$('saved').value; if(!n) return;
+  font=JSON.parse(JSON.stringify(allFonts()[n])); $('fname').value=n;
+  safeSet(DRAFT,font); curSlot=0; refreshUI();
+};
+$('del').onclick=function(){
+  var n=$('saved').value; if(!n||!confirm('Schrift „'+n+'“ wirklich löschen?')) return;
+  var f=allFonts(); delete f[n]; safeSet(KEY,f); refreshSaved();
+};
+$('exp').onclick=function(){
+  var n=$('saved').value||$('fname').value.trim()||'handschrift';
+  var data = allFonts()[n] || font;
+  var blob=new Blob([JSON.stringify({name:n,font:data})],{type:'application/json'});
+  var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=n+'.json'; a.click();
+  setTimeout(function(){URL.revokeObjectURL(a.href)},1000);
+};
+$('imp').onclick=function(){ $('file').click(); };
+$('file').onchange=function(){
+  var f=$('file').files[0]; if(!f) return;
+  var r=new FileReader();
+  r.onload=function(){
+    try{
+      var d=JSON.parse(r.result); if(!d.font||!d.font.glyphs) throw 0;
+      var all=allFonts(); all[d.name||'Importiert']=d.font; safeSet(KEY,all); refreshSaved();
+      alert('Importiert als „'+(d.name||'Importiert')+'“.');
+    }catch(e){ alert('Diese Datei ist keine gültige Schrift-Datei.'); }
+  };
+  r.readAsText(f); $('file').value='';
+};
+
+/* ---------- Umwandeln ---------- */
+function prepare(font){
+  // Pro Zeichen: Varianten mit Bounding-Box vorbereiten
+  var P={};
+  Object.keys(font.glyphs).forEach(function(c){
+    var vs=[];
+    (font.glyphs[c]||[]).forEach(function(strokes){
+      if(!strokes||!strokes.length) return;
+      var minX=1e9,maxX=-1e9;
+      strokes.forEach(function(s){ s.forEach(function(p){ if(p[0]<minX)minX=p[0]; if(p[0]>maxX)maxX=p[0]; }); });
+      vs.push({strokes:strokes,minX:minX,w:Math.max(maxX-minX,20)});
+    });
+    if(vs.length) P[c]=vs;
+  });
+  return P;
+}
+function normalize(t){
+  return t.replace(/[\u2018\u2019\u201A]/g,"'").replace(/[\u201C\u201D\u201E]/g,'"')
+          .replace(/[\u2013\u2014]/g,'-').replace(/\u2026/g,'...').replace(/\u00A0/g,' ')
+          .replace(/\*\*|__|`/g,'').replace(/\t/g,'    ');
+}
+var lastPick={};
+function pick(P,c){
+  var vs=P[c]; if(!vs) return null;
+  if(vs.length===1) return vs[0];
+  var i; do{ i=Math.floor(Math.random()*vs.length); }while(i===lastPick[c]);
+  lastPick[c]=i; return vs[i];
+}
+function rnd(a){ return (Math.random()*2-1)*a; }
+
+function renderText(){
+  var n=$('use').value, all=allFonts();
+  var fnt = all[n] || (Object.keys(font.glyphs).length ? font : null);
+  if(!fnt){ alert('Bitte erst eine Schrift erfassen und speichern.'); return; }
+  var P=prepare(fnt);
+  var size=+$('size').value, thick=+$('thick').value, wob=+$('wob').value, color=$('color').value, paper=$('paper').value;
+  var s=size/260;                      // Skalierung: x-Höhe (160 Einheiten) ≈ 0,6 * size
+  var lineH=size*1.7, margin=50, W=900, maxW=W-2*margin;
+  var text=normalize($('txt').value).replace(/\r/g,'');
+  var paras=text.split('\n');
+
+  // 1) Layout: Zeilen als Listen von Elementen
+  var lines=[], spaceW=size*0.38, gap=10*s;
+  paras.forEach(function(p){
+    if(p.trim()===''){ lines.push([]); return; }
+    var cur=[], x=0;
+    p.split(/(\s+)/).forEach(function(word){
+      if(word==='') return;
+      if(/^\s+$/.test(word)){ if(cur.length) x+=spaceW*word.length; return; }
+      var items=[], ww=0;
+      word.split('').forEach(function(c){
+        var v=pick(P,c);
+        if(v){ items.push({c:c,v:v,w:v.w*s+gap}); ww+=v.w*s+gap; }
+        else { var fw=size*0.55; items.push({c:c,v:null,w:fw}); ww+=fw; }
+      });
+      if(x+ww>maxW && cur.length){ lines.push(cur); cur=[]; x=0; }
+      items.forEach(function(it){ it.x=x; x+=it.w; cur.push(it); });
+    });
+    lines.push(cur);
+  });
+
+  // 2) Zeichnen
+  var dpr=Math.min(window.devicePixelRatio||1,2);
+  var H=Math.max(lines.length,12)*lineH+margin*2;
+  var cv=$('out'); cv.width=W*dpr; cv.height=H*dpr; cv.style.width='100%'; cv.style.aspectRatio=W+'/'+H;
+  var ctx=cv.getContext('2d'); ctx.scale(dpr,dpr);
+  ctx.fillStyle='#fffefb'; ctx.fillRect(0,0,W,H);
+
+  if(paper!=='plain'){
+    ctx.strokeStyle= paper==='grid' ? '#d6e0ef' : '#c9d6ec'; ctx.lineWidth=1;
+    for(var y=margin+size*1.15; y<H-margin+lineH; y+=lineH){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+    if(paper==='grid'){ for(var x2=margin; x2<W; x2+=lineH/2){ ctx.beginPath(); ctx.moveTo(x2,0); ctx.lineTo(x2,H); ctx.stroke(); } }
+    ctx.strokeStyle='#e8a3a3'; ctx.beginPath(); ctx.moveTo(margin-14,0); ctx.lineTo(margin-14,H); ctx.stroke();
+  }
+
+  ctx.strokeStyle=color; ctx.fillStyle=color; ctx.lineCap='round'; ctx.lineJoin='round';
+  lines.forEach(function(line,li){
+    var baseY=margin+size*1.15+li*lineH + rnd(wob*0.8);
+    line.forEach(function(it){
+      var jx=rnd(wob*0.8), jy=rnd(wob*1.2), rot=rnd(wob*0.018), sc=1+rnd(wob*0.015);
+      if(!it.v){
+        ctx.save(); ctx.font=(size*0.8)+'px "Segoe Script","Bradley Hand",cursive';
+        ctx.fillText(it.c, margin+it.x+jx, baseY+jy); ctx.restore(); return;
+      }
+      ctx.save();
+      ctx.translate(margin+it.x+jx, baseY+jy);
+      ctx.rotate(rot);
+      ctx.scale(s*sc, s*sc);
+      ctx.translate(-it.v.minX, -BASE);
+      ctx.lineWidth=thick/(s*sc);
+      it.v.strokes.forEach(function(st){ if(st.length) strokePath(ctx,st); });
+      ctx.restore();
+    });
+  });
+}
+$('go').onclick=renderText;
+$('png').onclick=function(){
+  var cv=$('out'); if(!cv.width) return;
+  var a=document.createElement('a'); a.href=cv.toDataURL('image/png'); a.download='handschrift.png'; a.click();
+};
+
+buildGrid(); refreshUI(); refreshSaved();
+})();
+</script>
+</body>
+</html>
