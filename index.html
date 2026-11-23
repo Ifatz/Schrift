@@ -71,6 +71,10 @@ button.b.d{color:#c0392b}
       <button class="b" id="imp">Importieren</button>
       <input type="file" id="file" accept=".json" class="hide">
     </div>
+    <details style="margin-top:10px"><summary>☁️ Mit GitHub synchronisieren (für andere Geräte)</summary>
+      <div class="row" style="margin-top:8px"><input type="text" id="ghu" placeholder="GitHub-Name" style="width:130px"><input type="text" id="ghr" placeholder="Repository" style="width:130px"><input type="password" id="ght" placeholder="Token (nur zum Hochladen)" style="flex:1;min-width:170px"></div>
+      <div class="row" style="margin-top:8px"><button class="b p" id="ghup">⬆ Gewählte Schrift hochladen</button><button class="b" id="ghdn">⬇ Alle von GitHub laden</button><label><input type="checkbox" id="ghauto"> beim Speichern automatisch hochladen</label></div>
+      <p class="hint" id="ghmsg"></p></details>
     <p class="hint">Gespeichert wird in deinem Browser. Mit „Exportieren“ bekommst du eine Datei als Sicherung oder für ein anderes Gerät.</p>
   </div>
 
@@ -117,7 +121,7 @@ button.b.d{color:#c0392b}
     <div class="row" style="margin-bottom:8px">
       <label for="paper">Papier</label>
       <select id="paper"><option value="lines">Liniert</option><option value="grid">Kariert</option><option value="plain">Blanko</option></select>
-      <label for="wob">Unregelmäßigkeit</label><input type="range" id="wob" min="0" max="3" step=".1" value="1">
+      <label for="wob">Unregelmäßigkeit</label><input type="range" id="wob" min="0" max="4" step=".1" value="1.5">
     </div>
     <div class="row" style="margin-bottom:8px">
       <label for="lsp">Buchstabenabstand</label><input type="range" id="lsp" min="-10" max="40" value="8">
@@ -380,7 +384,8 @@ $('save').onclick=function(){
   var n=$('fname').value.trim();
   if(!n){ alert('Bitte gib der Schrift zuerst einen Namen.'); return; }
   var f=allFonts(); f[n]=JSON.parse(JSON.stringify(font));
-  if(safeSet(KEY,f)){ refreshSaved(); $('saved').value=n; alert('Schrift „'+n+'“ gespeichert.'); }
+  if(safeSet(KEY,f)){ refreshSaved(); $('saved').value=n; alert('Schrift „'+n+'“ gespeichert.');
+    if(gh.t && $('ghauto').checked){ ghSave(); ghUpload(n).then(function(){ ghmsg('✓ Auch auf GitHub gespeichert.'); }).catch(function(e){ ghmsg('GitHub-Fehler: '+e.message); }); } }
 };
 $('load').onclick=function(){
   var n=$('saved').value; if(!n) return;
@@ -463,7 +468,7 @@ function drawText(cv,fnt,o,missEl){
         var v=pick(P,c);
         if(!v){ miss[c]=1; items.push({c:c,v:null,x:lx}); lx+=size*0.55; }
         else if(v.cur){ items.push({c:c,v:v,x:lx,j:1}); lx+=(EX-SX)*s; }
-        else { items.push({c:c,v:v,x:lx}); lx+=v.w*s+sp*s; }
+        else { items.push({c:c,v:v,x:lx}); lx+=v.w*s+sp*s+rnd(wob*size*0.012); }
       });
       if(x+lx>maxW && line.length){ lines.push(line); line=[]; x=0; }
       line.push({x:x,items:items}); x+=lx+spaceW;
@@ -484,16 +489,22 @@ function drawText(cv,fnt,o,missEl){
   }
   ctx.lineCap='round'; ctx.lineJoin='round';
   lines.forEach(function(line,li){
-    var by=PH?Math.floor(li/lpp)*PH+top+(li%lpp)*lineH:top+li*lineH;
+    var by=PH?Math.floor(li/lpp)*PH+top+(li%lpp)*lineH:top+li*lineH, drift=rnd(wob*1.5);
     line.forEach(function(w){
-      ctx.save(); ctx.translate(margin+w.x, by+rnd(wob*0.9)); ctx.rotate(rnd(wob*0.012));
+      drift+=rnd(wob*0.7); drift=Math.max(-wob*3.5,Math.min(wob*3.5,drift)); ctx.save(); ctx.translate(margin+w.x, by+drift+rnd(wob*0.5)); ctx.rotate(rnd(wob*0.016));
       w.items.forEach(function(it){
         ctx.save(); ctx.translate(it.x,0);
         if(!it.v){ ctx.fillStyle='#bdbdbd'; ctx.font=(size*0.75)+'px system-ui,sans-serif'; ctx.fillText(it.c,0,0); ctx.restore(); return; }
-        if(!it.j && wob){ ctx.translate(0,rnd(wob*0.6)); ctx.rotate(rnd(wob*0.015)); }
+        var sts=it.v.strokes, lw=pen*mult;
+        if(!it.j && wob){
+          ctx.translate(0,rnd(wob*0.9)); ctx.rotate(rnd(wob*0.022)); var sc=1+rnd(wob*0.035); ctx.scale(sc,sc);
+          var ph1=R()*6.28, ph2=R()*6.28, am=wob*3;
+          sts=sts.map(function(st){ return st.map(function(q){ return [q[0]+am*Math.sin(q[1]*.02+ph1), q[1]+am*Math.sin(q[0]*.02+ph2)]; }); });
+          lw*=1+rnd(wob*0.07);
+        }
         ctx.transform(1,0,-sk,1,0,0); ctx.scale(s,s); ctx.translate(-(it.j?SX:it.v.minX),-BASE);
-        ctx.strokeStyle=o.color; ctx.fillStyle=o.color; ctx.lineWidth=pen*mult;
-        it.v.strokes.forEach(function(q){ if(q.length) strokePath(ctx,q); });
+        ctx.strokeStyle=o.color; ctx.fillStyle=o.color; ctx.lineWidth=lw;
+        sts.forEach(function(q){ if(q.length) strokePath(ctx,q); });
         ctx.restore();
       });
       ctx.restore();
@@ -564,6 +575,45 @@ $('png').onclick=function(){
   var a=document.createElement('a'); a.href=cv.toDataURL('image/png'); a.download='handschrift.png'; a.click();
 };
 
+var GHK='handschrift_gh_v1', gh=safeGet(GHK)||{u:'lfatz',r:'Schrift',t:'',auto:false};
+$('ghu').value=gh.u; $('ghr').value=gh.r; $('ght').value=gh.t; $('ghauto').checked=!!gh.auto;
+function ghSave(){ gh={u:$('ghu').value.trim(),r:$('ghr').value.trim(),t:$('ght').value.trim(),auto:$('ghauto').checked}; safeSet(GHK,gh); }
+function ghmsg(t){ $('ghmsg').textContent=t; }
+function b64e(t){ return btoa(unescape(encodeURIComponent(t))); }
+function b64d(t){ return decodeURIComponent(escape(atob(t.replace(/\s/g,'')))); }
+function slug(n){ var x=0,i; for(i=0;i<n.length;i++) x=(x*31+n.charCodeAt(i))|0; return n.replace(/[^A-Za-z0-9_-]+/g,'_')+'-'+(x>>>0).toString(36); }
+function ghApi(path,opt){
+  opt=opt||{}; var h={'Accept':'application/vnd.github+json'}; if(gh.t) h['Authorization']='Bearer '+gh.t;
+  for(var k in (opt.headers||{})) h[k]=opt.headers[k]; opt.headers=h;
+  return fetch('https://api.github.com/repos/'+gh.u+'/'+gh.r+'/contents/'+path,opt);
+}
+async function ghUpload(name){
+  var f=allFonts()[name]; if(!f) throw new Error('Schrift nicht gespeichert');
+  var path='fonts/'+slug(name)+'.json', sha, r=await ghApi(path);
+  if(r.ok) sha=(await r.json()).sha;
+  var res=await ghApi(path,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:'Schrift '+name,content:b64e(JSON.stringify({name:name,font:f})),sha:sha})});
+  if(!res.ok) throw new Error('Status '+res.status);
+}
+async function ghDownAll(){
+  var r=await ghApi('fonts');
+  if(r.status===404){ ghmsg('Noch keine Schriften auf GitHub.'); return; }
+  if(!r.ok) throw new Error('Status '+r.status);
+  var list=(await r.json()).filter(function(x){ return /\.json$/.test(x.name); }), all=allFonts(), n=0, i;
+  for(i=0;i<list.length;i++){
+    var fr=await ghApi(list[i].path); if(!fr.ok) continue;
+    var j=await fr.json();
+    try{ var d=JSON.parse(b64d(j.content)); if(d.font&&d.font.glyphs){ all[d.name||list[i].name]=d.font; n++; } }catch(e){}
+  }
+  safeSet(KEY,all); refreshSaved(); ghmsg(n+' Schrift(en) geladen.');
+}
+$('ghup').onclick=async function(){
+  ghSave(); var n=$('saved').value;
+  if(!n){ ghmsg('Erst eine Schrift speichern und oben auswählen.'); return; }
+  if(!gh.t){ ghmsg('Bitte zuerst den Token eintragen.'); return; }
+  ghmsg('Lade hoch …');
+  try{ await ghUpload(n); ghmsg('✓ „'+n+'“ ist auf GitHub gespeichert.'); }catch(e){ ghmsg('Fehler: '+e.message+' (Token und Repository prüfen)'); }
+};
+$('ghdn').onclick=async function(){ ghSave(); ghmsg('Lade …'); try{ await ghDownAll(); }catch(e){ ghmsg('Fehler: '+e.message); } };
 buildGrid(); refreshUI(); refreshSaved();
 })();
 </script>
